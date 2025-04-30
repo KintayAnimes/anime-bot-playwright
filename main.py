@@ -1,47 +1,37 @@
-import os
+import subprocess
+subprocess.run(["playwright", "install", "chromium"], check=True)
+
+from playwright.sync_api import sync_playwright
+import requests
 import json
 import time
-import requests
-from playwright.sync_api import sync_playwright
+import os
 
-WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK")
 CONFIG_FILE = "anime_config.json"
-SEEN_FILE = "last_seen_episodes.json"
+WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK")
 
-# Carrega lista de animes
-with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-    anime_list = json.load(f)
-
-try:
-    with open(SEEN_FILE, "r", encoding="utf-8") as f:
-        last_seen = json.load(f)
-except FileNotFoundError:
-    last_seen = {anime["nome"]: False for anime in anime_list}
-
-
-def get_discord_video_link(url):
+def get_discord_video_link(page_url):
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        page.goto(url, timeout=60000)
-        try:
-            page.wait_for_selector("video#video", timeout=10000)
-            src = page.locator("video#video").get_attribute("src")
-        except:
-            src = None
+        page.goto(page_url, timeout=60000)
+        page.wait_for_selector("video", timeout=15000)
+
+        video_element = page.query_selector("video")
+        video_src = video_element.get_attribute("src") if video_element else None
+
         browser.close()
-        return src
+        return video_src
 
+def send_discord_message(anime, site_url, video_link=None):
+    content = f"📢 **Novo Episódio!**\n🎬 {anime}\n🔗 [Assistir no site]({site_url})"
+    if video_link:
+        content += f"\n📥 Download: {video_link}"
+    requests.post(WEBHOOK_URL, json={"content": content})
 
-def send_discord_message(anime, site_url, video_url):
-    if video_url:
-        content = f"📢 **Novo Episódio Disponível!**\n🎬 {anime}\n🔗 [Assistir no site]({site_url})\n🎥 Link detectado:\n{video_url}"
-    else:
-        content = f"📢 **Novo Episódio Disponível!**\n🎬 {anime}\n🔗 [Assistir no site]({site_url})"
-
-    data = {"content": content}
-    requests.post(WEBHOOK_URL, json=data)
-
+# Loop principal
+with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+    anime_list = json.load(f)
 
 while True:
     for anime in anime_list:
@@ -49,15 +39,13 @@ while True:
         url = anime["url"]
 
         print(f"Checando: {nome} - URL: {url}")
-        video_link = get_discord_video_link(url)
-        print(f"Link encontrado: {video_link}")
+        try:
+            video_link = get_discord_video_link(url)
+            print(f"🔗 Link encontrado: {video_link}")
+            if video_link:
+                send_discord_message(nome, url, video_link)
+        except Exception as e:
+            print(f"Erro ao checar {nome}: {e}")
 
-        if video_link and not last_seen.get(nome, False):
-            send_discord_message(nome, url, video_link)
-            last_seen[nome] = True
-
-    with open(SEEN_FILE, "w", encoding="utf-8") as f:
-        json.dump(last_seen, f, ensure_ascii=False, indent=4)
-
-    print("Aguardando 10 minutos...")
+    print("Aguardando 10 minutos...\n")
     time.sleep(600)
