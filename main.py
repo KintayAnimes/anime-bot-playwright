@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import requests
 from playwright.sync_api import sync_playwright
 
 WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK")
@@ -38,7 +39,8 @@ def send_discord_message(anime, site_url, video_url):
     else:
         content = f"📢 **Novo Episódio Disponível!**\n🎬 {anime}\n🔗 [Assistir no site]({site_url})"
 
-    os.system(f'curl -H "Content-Type: application/json" -X POST -d '{{"content": "{content}"}}' {WEBHOOK_URL}')
+    data = {"content": content}
+    requests.post(WEBHOOK_URL, json=data)
 
 
 while True:
